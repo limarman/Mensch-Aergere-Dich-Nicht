@@ -136,24 +136,24 @@ void Calculator::calculateProbabilitiesParallel()
 		
 
 		//backing up data
-		//if (iteration % 5 == 0) 
-		//{
-		//	if (backUpFile) 
-		//	{
-		//		stream.str(string());
-		//		stream << "Backing up data to " << backUpFileA << "\n";
-		//		logCout(stream);
-		//		backupProbabilites(probabilities, backUpFileA);
-		//	}
-		//	else 
-		//	{
-		//		stream.str(string());
-		//		stream << "Backing up data to " << backUpFileB << "\n";
-		//		logCout(stream);
-		//		backupProbabilites(probabilities, backUpFileB);
-		//	}
-		//	//backUpFile = !backUpFile; //toggle for next time
-		//}
+		if (iteration % 5 == 0) 
+		{
+			if (backUpFile) 
+			{
+				stream.str(string());
+				stream << "Backing up data to " << backUpFileA << "\n";
+				logCout(stream);
+				backupProbabilites(probabilities, backUpFileA);
+			}
+			else 
+			{
+				stream.str(string());
+				stream << "Backing up data to " << backUpFileB << "\n";
+				logCout(stream);
+				backupProbabilites(probabilities, backUpFileB);
+			}
+			backUpFile = !backUpFile; //toggle for next time
+		}
 		
 	}
 

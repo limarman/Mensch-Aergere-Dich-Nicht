@@ -11,6 +11,7 @@
 #include <random>
 #include "SimplePlayer.h"
 #include "RandomPlayer.h"
+#include "PythonPlayer.h"
 #include "ImprovedSimplePlayer.h"
 #include "OptimalPlayerBM.h"
 #include "FastOptimalPlayerBMS.h"
@@ -22,6 +23,8 @@ void selectivityTest(void);
 void compressorConsistencyTest(void);
 void percentageOfCorrectMoves(GamePlayer*);
 void runTimeTest(void);
+
+GamePlayer* getGamePlayer(char*);
 
 int main(int argc, char *argv[])
 {
@@ -50,10 +53,16 @@ int main(int argc, char *argv[])
 				" - probabilites from init_file are loaded for initialization if file name is given.\n" <<
 				" - calculating is distributed to given number of threads.\n" <<
 				" descr: calculates the winning probabilites for every position and saves results to results/ResultsC.bin.\n\n" <<
+				"tournament <number_of_threads> <game_player_1> <game_player_2> <number_of_games>\n" <<
+				" - calculation is distributed among \"number_of_threads\" threads.\n" <<
+				" - tournament consists of \"<number_of_games>\" games."<<
+				" - \"game_player_1\" and \"game_player_2\" are pitted against each other. \"game_player_1\" moves first. Available GamePlayers:\n" <<
+				" -- SimplePlayer, ImprovedSimplePlayer, OptimalPlayer, OptimalPlayerBM, OptimalPlayerBMS, FastOptimalPlayerBMS, RandomPlayer, PythonPlayer\n" <<
+				" descr: runs a tournament pitting two GamePlayers against each other, recording the number of wins per player.\n\n"
 				"compareGP <number_of_threads> <game_player>\n" <<
 				" - calculations is distributed among \"number_of_threads\" threads.\n" <<
 				" - game_player which is used in comparison. Available GamePlayers:\n" <<
-				" -- SimplePlayer, ImprovedSimplePlayer, OptimalPlayerBM, OptimalPlayerBMS, FastOptimalPlayerBMS, RandomPlayer\n"<<
+				" -- SimplePlayer, ImprovedSimplePlayer, OptimalPlayerBM, OptimalPlayerBMS, FastOptimalPlayerBMS, RandomPlayer, PythonPlayer\n"<<
 				" descr: compares the given \"game_player\" to the optimal GamePlayer and counts the number of overlapped decisions.\n\n"<<
 				"getBestMoves <compressor_type> <position_id>\n" <<
 				" descr: extracts the best moves for every die roll given the position ID.\n" <<
@@ -66,7 +75,6 @@ int main(int argc, char *argv[])
 				"getPos <positionID>\n" <<
 				" - positionID should be in bounds [0,numberOfPositions-1]\n" <<
 				" descr: gets and shows the position for given positionID.\n";
-
 			
 		}
 		else
@@ -283,6 +291,67 @@ int main(int argc, char *argv[])
 				std::cout << "Number of threads have to be specified (for help see madn.out help)" << "\n";
 			}
 		}
+		else if (strcmp(argv[3], "tournament") == 0)
+		{
+			if (argc < 8)
+			{
+				std::cout << "Invalid command. See madn.out help for help.\n";
+			}
+
+			//parsing number of threads
+			int numberOfThreads;
+			try 
+			{
+				numberOfThreads = stoi(argv[4]);
+			}
+			catch(const char* e)
+			{
+				std::cout << "Number of Threads needs to be a number. See madn.out help for help.\n";
+				return -1;
+			}
+
+			stringstream ss;
+
+			// initializing the different GamePlayers
+			GamePlayer* gamePlayer1 = getGamePlayer(argv[5]); 
+			GamePlayer* gamePlayer2 = getGamePlayer(argv[6]); 
+
+			//parsing the number of games to play in the tournament
+			int numberOfGames;
+			try 
+			{
+				numberOfGames = stoi(argv[7]);
+			}
+			catch(const char* e)
+			{
+				std::cout << "Number of Games needs to be a number. See madn.out help for help.\n";
+				return -1;
+			}
+
+			// Set up tournament
+			Tournament t(gamePlayer1, gamePlayer2, numberOfGames, numberOfThreads);
+
+			// measure time
+			auto start = chrono::steady_clock::now();
+
+			ss.str(string());
+			ss << "Tournament has started." << endl
+				<< "GamePlayer 0: " << argv[5] << endl
+				<< "GamePlayer 1: " << argv[6] << endl
+				<< "Number of Games: " <<  argv[7] << endl;
+			logCout(ss);
+
+			t.startTournament();
+
+			//log runtime
+			auto end = chrono::steady_clock::now();
+			ss.str(string());
+			ss << endl << "Elapsed time in seconds : "
+				<< chrono::duration_cast<chrono::seconds>(end - start).count()
+				<< " s" << endl;
+			logCout(ss);
+
+		}
 		else if (strcmp(argv[3], "compareGP") == 0) 
 		{
 			if (argc < 6) 
@@ -473,7 +542,7 @@ int main(int argc, char *argv[])
 				return -1;
 			}
 
-			std:cout << "The Position for ID " << positionID << " is: \n" << Position::positionToString(positionID) << "\n";
+			std::cout << "The Position for ID " << positionID << " is: \n" << Position::positionToString(positionID) << "\n";
 		}
 	}
 
@@ -546,6 +615,43 @@ int main(int argc, char *argv[])
 
 
 	return 0;
+}
+
+
+GamePlayer* getGamePlayer(char* name)
+{
+	if (strcmp(name, "SimplePlayer") == 0)
+	{
+		return new SimplePlayer();
+	}
+	else if (strcmp(name, "ImprovedSimplePlayer") == 0)
+	{
+		return new ImprovedSimplePlayer();
+	}
+	else if (strcmp(name, "OptimalPlayerBM") == 0)
+	{
+		return new OptimalPlayerBM(false);
+	}
+	else if (strcmp(name, "OptimalPlayerBMS") == 0)
+	{
+		return new OptimalPlayerBM(true);
+	}
+	else if (strcmp(name, "FastOptimalPlayerBMS") == 0)
+	{
+		return new FastOptimalPlayerBMS("results/bestMoves");
+	}
+	else if (strcmp(name, "RandomPlayer") == 0)
+	{
+		return new RandomPlayer();
+	}
+	else if (strcmp(name, "PythonPlayer") == 0)
+	{
+		return new PythonPlayer("py_strategies/main.py");
+	}
+	else
+	{
+		throw std::runtime_error("Unknown GamePlayer name: " + std::string(name));
+	}
 }
 
 /*

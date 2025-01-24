@@ -5,7 +5,8 @@ class Tournament
 {
 
 private:
-	static const int numberOfThreads = 2;
+	//static const int numberOfThreads = 2;#
+	int numberOfThreads = 2;
 	int numberOfGames;
 	GamePlayer* player0;
 	GamePlayer* player1;
@@ -19,6 +20,8 @@ private:
 public:
 
 	Tournament(GamePlayer* player0, GamePlayer* player1, int numberOfGames);
+
+	Tournament(GamePlayer* player0, GamePlayer* player1, int numberOfGames, int numberOfThreads);
 
 	void startTournament();
 

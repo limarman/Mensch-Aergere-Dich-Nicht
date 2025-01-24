@@ -591,3 +591,13 @@ bool Position::getTurn()
 {
 	return turn;
 }
+
+void Position::toSortedNormalForm()
+{
+	// sorting the pieces in the position - bringing it into normal-form
+	for(int i = 0; i < 2; i++)
+	{
+		vector<int>* pieces = players[i].getPiecePositions();
+		sort((*pieces).begin(), (*pieces).end());
+	}
+}
