@@ -2,12 +2,6 @@
 #include <algorithm>
 #include <iostream>
 
-struct GlobalPython {
-    PyInitialize();
-};
-static GlobalPython global_python;  // Initialize once
-
-
 Position PythonPlayer::chooseSuccessor(Position& p, int dieroll)
 {
 	//create a copy of Position p - as we are going to sort the piece arrays
@@ -61,21 +55,17 @@ Position PythonPlayer::chooseSuccessor(Position& p, int dieroll)
 	return this->query(p, dieroll, &indices, &succs);
 }
 
+/*
+* The query function that accesses the python subinterpreter
+*/
 Position PythonPlayer::query(Position& p, int dieroll, vector<int>* indices, vector<Position>* succs)
 {	
 
-	// Get or create the sub-interpreter for this thread
-    SubInterpreterState* sub = getOrCreateInterpreter();
+	// Ensure the correct sub-interpreter is used for this thread
+    SubInterpreterState* sub = interpreterManager.getOrCreateInterpreter();
 
-    // Save the current thread state (e.g., the main interpreter)
-    PyThreadState* old_tstate = PyThreadState_Get();
-
-    // Switch to the sub-interpreter's thread state
-    PyEval_RestoreThread(sub->tstate);
-
-
-	return (*succs)[0];
-	// std::cout << "query Python Player";
+    // Save the current thread state and switch to the sub-interpreter's thread state
+    PyThreadState* saved_tstate = PyThreadState_Swap(sub->tstate);
 	
 	// OPTIONAL but maybe reasonable:
 	// sort the indices in ascending order (together with the succs)
@@ -109,24 +99,26 @@ Position PythonPlayer::query(Position& p, int dieroll, vector<int>* indices, vec
 
 	// convert the position and the succs into a dataformat that can be passed to Python
 	// create dictionary for current position
-	py::dict pos_dict = positionToPyDict(p);
+    PyObject* pos_dict = positionToPyDict(p);
+    
+    // Create a list of successor dictionaries
+    PyObject* succ_list = PyList_New(succs->size());
+    for (size_t i = 0; i < succs->size(); ++i) {
+        PyObject* succ_dict = positionToPyDict((*succs)[i]);
+        PyList_SET_ITEM(succ_list, i, succ_dict);
+    }
 
+    // Convert indices to a Python list
+    PyObject* indices_list = PyList_New(indices->size());
+    for (size_t i = 0; i < indices->size(); ++i) {
+        PyList_SET_ITEM(indices_list, i, PyLong_FromLong((*indices)[i]));
+    }
 
-	// create list of successor dictionaries
-	py::list succ_list;
-	for(auto& succ : *succs) {
-		py::dict succ_dict = positionToPyDict(succ);
-		succ_list.append(succ_dict);
-	}
+    // Call Python function with parameters
+    PyObject* result = PyObject_CallFunctionObjArgs(sub->get_move_func, pos_dict, PyLong_FromLong(dieroll), indices_list, succ_list, nullptr);
 
-	// // convert indices to python list
-	py::list indices_list = py::cast(*indices);
-	
-	// call Python function with parameters
-	py::object result = sub->get_move_func(pos_dict, dieroll, indices_list, succ_list);
-	
-	// convert result to C++ int
-	int chosen_index = result.cast<int>();
+    // Convert the result to C++ int
+    int chosen_index = PyLong_AsLong(result);
 
 	// error handling
 	auto it = std::find(indices->begin(), indices->end(), chosen_index);
@@ -137,102 +129,210 @@ Position PythonPlayer::query(Position& p, int dieroll, vector<int>* indices, vec
 	// choose position
 	size_t pos = std::distance(indices->begin(), it);
 	
+	// Restore the original thread state after the function call
+    PyThreadState_Swap(saved_tstate);
+
 	// return corresponding successor
 	return (*succs)[pos];
 
 	// return (*succs)[0];
 }
 
-py::dict PythonPlayer::positionToPyDict(Position& p) {
-	py::dict pos_dict;
-	pos_dict["player0"] = py::cast(p.getPlayer(0)->getPiecePositions());
-	pos_dict["player1"] = py::cast(p.getPlayer(1)->getPiecePositions());
-	pos_dict["turn"] = py::cast(p.getTurn());
-	return pos_dict;
-}
+PyObject* PythonPlayer::positionToPyDict(Position& p) {
+	// Create a new Python dictionary
+    PyObject* pos_dict = PyDict_New();
 
-PythonPlayer::SubInterpreterState::SubInterpreterState(const char* scriptPath) : threadId(std::this_thread::get_id()) {  // Track owning thread
-    // Release the GIL of the main interpreter
-    py::gil_scoped_release release;
-
-    // Save the main interpreter's thread state
-    PyThreadState* main_tstate = PyThreadState_Get();
-
-    // Create a new sub-interpreter
-    tstate = Py_NewInterpreter();
-    if (!tstate) {
-        throw std::runtime_error("Failed to create sub-interpreter");
+    // Convert player 0's piece positions to a Python list
+    std::vector<int> player0_positions = *(p.getPlayer(0)->getPiecePositions());
+    PyObject* py_player0_positions = PyList_New(player0_positions.size());
+    for (size_t i = 0; i < player0_positions.size(); ++i) {
+        PyList_SET_ITEM(py_player0_positions, i, PyLong_FromLong(player0_positions[i]));
     }
 
-    // Now in the sub-interpreter's context
-    {
-        // Acquire the GIL for this sub-interpreter
-        py::gil_scoped_acquire acquire;
+    // Add player 0's positions to the dictionary
+    PyDict_SetItemString(pos_dict, "player0", py_player0_positions);
+    Py_DECREF(py_player0_positions);  // Decrement reference as the list is now owned by the dict
 
-        // Add script directory to Python path
-        py::module sys = py::module::import("sys");
-        std::string dir = std::string(scriptPath);
-        size_t last_slash = dir.find_last_of("/\\");
-        if (last_slash != std::string::npos) {
-            sys.attr("path").attr("append")(dir.substr(0, last_slash));
-        }
-
-        // Import the Python module
-        std::string module_name = dir.substr(last_slash + 1);
-        if (module_name.size() >= 3 && 
-            module_name.substr(module_name.size() - 3) == ".py") {
-            module_name = module_name.substr(0, module_name.size() - 3);
-        }
-        py::module player_module = py::module::import(module_name.c_str());
-
-        // Store the Python function reference
-        get_move_func = player_module.attr("get_move");
+    // Convert player 1's piece positions to a Python list
+    std::vector<int> player1_positions = *(p.getPlayer(1)->getPiecePositions());
+    PyObject* py_player1_positions = PyList_New(player1_positions.size());
+    for (size_t i = 0; i < player1_positions.size(); ++i) {
+        PyList_SET_ITEM(py_player1_positions, i, PyLong_FromLong(player1_positions[i]));
     }
 
-    // Restore the main interpreter's thread state
-    PyEval_RestoreThread(main_tstate);
+    // Add player 1's positions to the dictionary
+    PyDict_SetItemString(pos_dict, "player1", py_player1_positions);
+    Py_DECREF(py_player1_positions);  // Decrement reference as the list is now owned by the dict
+
+    // Set the "turn" value as a boolean in the dictionary
+    PyObject* py_turn = PyBool_FromLong(p.getTurn() ? 1 : 0);
+    PyDict_SetItemString(pos_dict, "turn", py_turn);
+    Py_DECREF(py_turn);  // Decrement reference as the boolean is now owned by the dict
+
+    // Return the populated Python dictionary
+    return pos_dict;
 }
 
-PythonPlayer::SubInterpreterState::~SubInterpreterState() {
-    if (tstate) {
-        // Save the current thread state
-        PyThreadState* old_tstate = PyThreadState_Get();
-
-        // Switch to this sub-interpreter's thread state
-        PyEval_RestoreThread(tstate);
-
-        // Destroy the sub-interpreter
-        Py_EndInterpreter(tstate);
-
-        // Restore the original thread state
-        PyEval_RestoreThread(old_tstate);
-    }
-}
-
-PythonPlayer::SubInterpreterState* PythonPlayer::getOrCreateInterpreter() {
-    std::lock_guard<std::mutex> lock(mutex);  // Thread-safe access
-    std::thread::id current_id = std::this_thread::get_id();
-
-    // Check if this thread already has a sub-interpreter
-    for (auto& state : interpreters) {
-        if (state->threadId == current_id) {
-            return state.get();
-        }
-    }
-
-    // Create a new sub-interpreter for this thread
-    interpreters.push_back(
-        std::unique_ptr<SubInterpreterState>(new SubInterpreterState(scriptPath))
-    );
-    return interpreters.back().get();
-}
-
-PythonPlayer::PythonPlayer(const char* fileDir) : scriptPath(fileDir)
+PythonPlayer::PythonPlayer(const char* fileDir) : scriptPath(fileDir), interpreterManager(fileDir)
 {	
-	// create the first thread
+	
 }
 
 PythonPlayer::~PythonPlayer()
 {
-	//py::finalize_interpreter(); // Stop Python interpreter
+
+}
+
+/*
+* SUBINTERPRETER IMPLEMENTATIONS
+*/
+
+// Constructor: Initialize sub-interpreter and import the Python function
+SubInterpreterState::SubInterpreterState(const char* scriptPath, PyInterpreterConfig &config) {
+
+    // Create a new sub-interpreter
+    createNewInterpreter(config);
+
+    if (!tstate) {
+        std::cerr << "Failed to create sub-interpreter." << std::endl;
+        //PyGILState_Release(gstate);
+        throw std::runtime_error("Sub-interpreter creation failed.");
+    }
+
+    // Switch to the sub-interpreter
+    PyThreadState_Swap(tstate);
+
+    // Initialize and import the function from the Python module
+    initialize_and_import_function(scriptPath);
+
+    // Save the current thread ID
+    threadId = std::this_thread::get_id();
+
+    PyEval_ReleaseThread(PyThreadState_Get());
+}
+
+// Destructor: Clean up the sub-interpreter
+SubInterpreterState::~SubInterpreterState() {
+    // Acquire the GIL and switch to the sub-interpreter
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    PyThreadState_Swap(tstate);
+
+    // Clean up the Python objects (e.g., `get_move_func`)
+    if (get_move_func) {
+        Py_DECREF(get_move_func);
+    }
+
+    // Close the sub-interpreter
+    Py_EndInterpreter(tstate);
+
+    // Release the GIL
+    PyGILState_Release(gstate);
+}
+
+// Helper function: Initialize the sub-interpreter and import the function
+void SubInterpreterState::initialize_and_import_function(const char* scriptPath) {
+    // Add script directory to Python's sys.path
+    PyObject* sys_module = PyImport_ImportModule("sys");
+    if (!sys_module) {
+        PyErr_Print();
+        throw std::runtime_error("Failed to import sys module.");
+    }
+
+    PyObject* sys_path = PyObject_GetAttrString(sys_module, "path");
+    if (!sys_path) {
+        Py_DECREF(sys_module);
+        PyErr_Print();
+        throw std::runtime_error("Failed to get sys.path.");
+    }
+
+    std::string dir = std::string(scriptPath);
+    size_t last_slash = dir.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        std::string script_dir = dir.substr(0, last_slash);
+        PyObject* py_script_dir = PyUnicode_FromString(script_dir.c_str());
+        PyList_Append(sys_path, py_script_dir);  // Append the script directory to sys.path
+        Py_DECREF(py_script_dir);
+    }
+
+    Py_DECREF(sys_module);
+    Py_DECREF(sys_path);
+
+    // Extract module name from the path
+    std::string module_name = dir.substr(last_slash + 1);
+    if (module_name.size() >= 3 && module_name.substr(module_name.size() - 3) == ".py") {
+        module_name = module_name.substr(0, module_name.size() - 3);
+    }
+
+    // Import the Python module
+    PyObject* player_module = PyImport_ImportModule(module_name.c_str());
+    if (!player_module) {
+        PyErr_Print();
+        throw std::runtime_error("Failed to import Python module.");
+    }
+
+    // Retrieve the get_move function from the module
+    get_move_func = PyObject_GetAttrString(player_module, "get_move");
+    if (!get_move_func || !PyCallable_Check(get_move_func)) {
+        Py_DECREF(player_module);
+        PyErr_Print();
+        throw std::runtime_error("Failed to get 'get_move' function from the module.");
+    }
+
+    Py_DECREF(player_module);  // Decrement reference to the module object
+}
+
+void SubInterpreterState::createNewInterpreter(PyInterpreterConfig &config){
+
+    Py_NewInterpreterFromConfig(&tstate, &config);
+
+}
+/*
+* INTERPRETER MANAGER IMPLEMENTATIONS
+*/
+
+// Constructor: Initialize with the script path
+InterpreterManager::InterpreterManager(const char* scriptPath) : scriptPath(scriptPath) {
+    // Initialize the Python interpreter if it's not already initialized
+    if (!Py_IsInitialized()) {
+        Py_Initialize();  // Initialize the global interpreter lock (GIL)
+    }
+
+	PyEval_ReleaseThread(PyThreadState_Get());
+
+}
+
+// Destructor: Clean up all sub-interpreters
+InterpreterManager::~InterpreterManager() {
+    // Acquire the GIL and clean up all sub-interpreters
+    PyGILState_STATE gstate = PyGILState_Ensure();
+    
+    for (auto& interpreter : interpreters) {
+        interpreter.reset();  // Destructors will be called for each `SubInterpreterState`
+    }
+
+    // Release the GIL
+    PyGILState_Release(gstate);
+}
+
+// Get or create a sub-interpreter for the current thread
+SubInterpreterState* InterpreterManager::getOrCreateInterpreter() {
+    std::lock_guard<std::mutex> lock(mutex);  // Ensure thread safety with a mutex
+
+    // Check if the current thread already has a sub-interpreter
+    std::thread::id current_thread_id = std::this_thread::get_id();
+    //std::cout << "Calling for Subinterpreter" << " Thread ID " << current_thread_id << endl;
+    for (auto& interpreter : interpreters) {
+        if (interpreter->threadId == current_thread_id) {
+            return interpreter.get();
+        }
+    }
+
+    // If no interpreter exists for this thread, create a new one
+    std::unique_ptr<SubInterpreterState> new_interpreter(new SubInterpreterState(scriptPath, config));
+
+    // Save the new interpreter in the list
+    interpreters.push_back(std::move(new_interpreter));
+
+    // Return the new interpreter
+    return interpreters.back().get();
 }

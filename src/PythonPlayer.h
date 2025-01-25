@@ -5,16 +5,13 @@ Creates a Python "GamePlayer" object from the given file direction of the Python
 Calls GamePlayer.getMove() for every move of Python Player
 */
 
+#pragma once
 #include "GamePlayer.h"
 #include <mutex>
 #include <thread>
 #include <Python.h>
 #include <memory>  // for unique_ptr
-// #include <pybind11/pybind11.h> // Include pybind11 headers
-// #include <pybind11/embed.h>    // Only needed if embedding Python
-#pragma once
 
-namespace py = pybind11; // Define the namespace
 
 // Define visibility macro
 #ifdef _WIN32
@@ -23,28 +20,53 @@ namespace py = pybind11; // Define the namespace
 #  define PYTHON_PLAYER_EXPORT __attribute__((visibility("default"))) // For Unix-like systems
 #endif
 
-class PYTHON_PLAYER_EXPORT PythonPlayer : public GamePlayer
-{
+
+// Class for managing sub-interpreters
+class SubInterpreterState {
+public:
+    PyThreadState* tstate = nullptr;  // Thread state for the sub-interpreter
+    PyObject* get_move_func = nullptr; // Python function reference
+    std::thread::id threadId;          // Owning thread ID
+
+    SubInterpreterState(const char* scriptPath, PyInterpreterConfig& config);
+    ~SubInterpreterState();
+
 private:
-	struct SubInterpreterState {
-        PyThreadState* tstate = nullptr; // Sub-interpreter thread state
-        py::object get_move_func;        // Function reference
-		std::thread::id threadId;        // Owning thread ID
+    void initialize_and_import_function(const char* scriptPath); // Helper function
+    void createNewInterpreter(PyInterpreterConfig &config); // Helper function to create a new interpreter
+};
 
-        SubInterpreterState(const char* scriptPath);
-        ~SubInterpreterState();
-    };
-
-	std::mutex mutex;
-    std::vector<std::unique_ptr<SubInterpreterState>> interpreters;
-    const char* scriptPath;
+// Class to manage multiple interpreters (e.g., multiton pattern)
+class InterpreterManager {
+public:
+    InterpreterManager(const char* scriptPath);
+    ~InterpreterManager();
 
     SubInterpreterState* getOrCreateInterpreter();
 
-	// int getBestMovePieceIndex(uint64_t positionID, int dieroll);
-	// py::object get_move_func;
-	// py::scoped_interpreter guard;
-	py::dict positionToPyDict(Position& p);
+private:
+    std::mutex mutex;  // Mutex for thread-safe access
+    std::vector<std::unique_ptr<SubInterpreterState>> interpreters; // List of interpreters
+    const char* scriptPath;
+
+    PyInterpreterConfig config = {
+        .use_main_obmalloc = 0,
+        .allow_fork = 0,
+        .allow_exec = 0,
+        .allow_threads = 1,
+        .allow_daemon_threads = 0,
+        .check_multi_interp_extensions = 1,
+        .gil = PyInterpreterConfig_OWN_GIL,
+    };
+};
+
+class PYTHON_PLAYER_EXPORT PythonPlayer : public GamePlayer
+{
+private:
+	InterpreterManager interpreterManager;  // Manages sub-interpreters
+	const char* scriptPath;                 // Path to the Python script
+	
+	PyObject* positionToPyDict(Position& p);
 	Position query(Position& p, int dieroll, vector<int>* indices, vector<Position>* succs);
 
 public:
@@ -52,7 +74,6 @@ public:
 	Position chooseSuccessor(Position& p, int dieroll);
 
 	PythonPlayer(const char* fileDir);
-
 	~PythonPlayer();
 
 };
