@@ -111,7 +111,9 @@ Position PythonPlayer::query(Position& p, int dieroll, vector<int>* indices, vec
     // Convert indices to a Python list
     PyObject* indices_list = PyList_New(indices->size());
     for (size_t i = 0; i < indices->size(); ++i) {
-        PyList_SET_ITEM(indices_list, i, PyLong_FromLong((*indices)[i]));
+        PyObject* index = PyLong_FromLong((*indices)[i]);
+        PyList_SET_ITEM(indices_list, i, index);
+        Py_DECREF(index);
     }
 
     // Call Python function with parameters
@@ -128,7 +130,13 @@ Position PythonPlayer::query(Position& p, int dieroll, vector<int>* indices, vec
 
 	// choose position
 	size_t pos = std::distance(indices->begin(), it);
-	
+
+    // Clean up ressources
+    Py_DECREF(pos_dict);
+    Py_DECREF(succ_list);
+    Py_DECREF(indices_list);
+    Py_DECREF(result);
+
 	// Restore the original thread state after the function call
     PyThreadState_Swap(saved_tstate);
 
