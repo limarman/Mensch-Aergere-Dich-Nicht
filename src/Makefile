@@ -8,8 +8,7 @@ PYTHON_LDFLAGS = -lpython3.12
 # PYTHON_LDFLAGS = $(shell python3-config --ldflags)
 
 # Check if Python is available
-#PYTHON_INSTALLED = $(shell python3-config --cflags >/dev/null 2>&1 && echo 1 || echo 0)
-PYTHON_INSTALLED = 0
+PYTHON_INSTALLED = $(shell python3-config --cflags >/dev/null 2>&1 && echo 1 || echo 0)
 
 ifeq ($(PYTHON_INSTALLED), 1)
     CXXFLAGS = $(BASE_CXXFLAGS) $(PYTHON_CFLAGS)
