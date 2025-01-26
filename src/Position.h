@@ -74,6 +74,8 @@ public:
 
 	bool isEqual(Position& pos);
 
+	void toSortedNormalForm();
+
 	/*
 	* returns whether one of the two players has already finished the game
 	*/

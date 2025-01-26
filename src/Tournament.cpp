@@ -12,6 +12,14 @@ Tournament::Tournament(GamePlayer* player0, GamePlayer* player1, int numberOfGam
 	this->numberOfGames = numberOfGames;
 }
 
+Tournament::Tournament(GamePlayer* player0, GamePlayer* player1, int numberOfGames, int numberOfThreads)
+{
+	this->player0 = player0;
+	this->player1 = player1;
+	this->numberOfGames = numberOfGames;
+	this->numberOfThreads = numberOfThreads;
+}
+
 void Tournament::startTournament() 
 {
 	atomic<int> numberOfWins{ 0 };
