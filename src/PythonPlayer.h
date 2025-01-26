@@ -5,6 +5,8 @@ Creates a Python "GamePlayer" object from the given file direction of the Python
 Calls GamePlayer.getMove() for every move of Python Player
 */
 
+#ifdef USE_PYTHON
+
 #pragma once
 #include "GamePlayer.h"
 #include <mutex>
@@ -77,3 +79,5 @@ public:
 	~PythonPlayer();
 
 };
+
+#endif

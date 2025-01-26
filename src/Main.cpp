@@ -11,13 +11,16 @@
 #include <random>
 #include "SimplePlayer.h"
 #include "RandomPlayer.h"
-#include "PythonPlayer.h"
 #include "ImprovedSimplePlayer.h"
 #include "OptimalPlayerBM.h"
 #include "FastOptimalPlayerBMS.h"
 #include <cstring>
 #include <thread>
 #include "Analyser.h"
+
+#ifdef USE_PYTHON
+#include "PythonPlayer.h"
+#endif
 
 void selectivityTest(void);
 void compressorConsistencyTest(void);
@@ -644,10 +647,12 @@ GamePlayer* getGamePlayer(char* name)
 	{
 		return new RandomPlayer();
 	}
+	#ifdef USE_PYTHON
 	else if (strcmp(name, "PythonPlayer") == 0)
 	{
 		return new PythonPlayer("py_strategies/main.py");
 	}
+	#endif
 	else
 	{
 		throw std::runtime_error("Unknown GamePlayer name: " + std::string(name));

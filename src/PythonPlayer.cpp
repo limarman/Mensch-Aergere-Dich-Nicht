@@ -1,3 +1,5 @@
+#ifdef USE_PYTHON
+
 #include "PythonPlayer.h"
 #include <algorithm>
 #include <iostream>
@@ -344,3 +346,5 @@ SubInterpreterState* InterpreterManager::getOrCreateInterpreter() {
     // Return the new interpreter
     return interpreters.back().get();
 }
+
+#endif
