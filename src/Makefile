@@ -13,7 +13,7 @@ PYTHON_INSTALLED = $(shell python3-config --cflags >/dev/null 2>&1 && echo 1 || 
 ifeq ($(PYTHON_INSTALLED), 1)
     CXXFLAGS = $(BASE_CXXFLAGS) $(PYTHON_CFLAGS)
     LDFLAGS = $(BASE_LDFLAGS) $(PYTHON_LDFLAGS)
-    USE_PYTHON = $(-DUSE_PYTHON)
+    USE_PYTHON = -DUSE_PYTHON
 else
     CXXFLAGS = $(BASE_CXXFLAGS)
     LDFLAGS = $(BASE_LDFLAGS)

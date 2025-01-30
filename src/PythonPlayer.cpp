@@ -23,7 +23,7 @@ Position PythonPlayer::chooseSuccessor(Position& p, int dieroll)
 		playerToMove = 1;
 	}
 
-	vector<Position> succs = p.calculateSuccessors(dieroll);
+	vector<Position> succs = pNew.calculateSuccessors(dieroll);
 
 	//std::cout << "Compute successors" << endl;
 
@@ -54,7 +54,7 @@ Position PythonPlayer::chooseSuccessor(Position& p, int dieroll)
 	// std::cout << "Query Python function" << endl;
 
 	//query the python model
-	return this->query(p, dieroll, &indices, &succs);
+	return this->query(pNew, dieroll, &indices, &succs);
 }
 
 /*
